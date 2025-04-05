@@ -1,0 +1,158 @@
+#include <AFMotor.h>
+#include <Servo.h>
+
+// Motor Setup
+AF_DCMotor rightBack(1);
+AF_DCMotor rightFront(2);
+AF_DCMotor leftFront(3);
+AF_DCMotor leftBack(4);
+
+Servo servoLook;
+
+const int trig = 2;
+const int echo = 13;
+
+const int stopDist = 50;      // Stop if obstacle is within 50cm
+const int motorSpeed = 60;
+const int motorOffset = 10;
+const int turnSpeed = 50;
+
+void setup() {
+  Serial.begin(9600);
+
+  // Set motor speeds
+  rightBack.setSpeed(motorSpeed);
+  rightFront.setSpeed(motorSpeed);
+  leftFront.setSpeed(motorSpeed + motorOffset);
+  leftBack.setSpeed(motorSpeed + motorOffset);
+  stopMove();
+
+  // Initialize ultrasonic and servo
+  pinMode(trig, OUTPUT);
+  pinMode(echo, INPUT);
+  servoLook.attach(10);
+  servoLook.write(90);  // Center
+  delay(500);
+
+  Serial.println("Obstacle Avoidance Bot Ready");
+}
+
+void loop() {
+  servoLook.write(90);  // Look straight
+  delay(300);
+  int distance = getDistance();
+
+  Serial.print("Front Distance: ");
+  Serial.println(distance);
+
+  if (distance > stopDist) {
+    moveForward();
+  } else {
+    stopMove();
+    delay(300);
+    int direction = checkDirection();  // 0 = Left, 1 = U-Turn, 2 = Right
+
+    Serial.print("Turn Direction: ");
+    Serial.println(direction);
+
+    switch (direction) {
+      case 0:
+        turnLeft(500);
+        break;
+      case 1:
+        turnLeft(900);  // U-turn
+        break;
+      case 2:
+        turnRight(500);
+        break;
+    }
+  }
+
+  delay(100);
+}
+
+// Movement Functions
+void moveForward() {
+  rightBack.run(FORWARD);
+  rightFront.run(FORWARD);
+  leftFront.run(FORWARD);
+  leftBack.run(FORWARD);
+}
+
+void stopMove() {
+  rightBack.run(RELEASE);
+  rightFront.run(RELEASE);
+  leftFront.run(RELEASE);
+  leftBack.run(RELEASE);
+}
+
+void turnLeft(int duration) {
+  setTurnSpeed();
+  rightBack.run(FORWARD);
+  rightFront.run(FORWARD);
+  leftFront.run(BACKWARD);
+  leftBack.run(BACKWARD);
+  delay(duration);
+  stopMove();
+}
+
+void turnRight(int duration) {
+  setTurnSpeed();
+  rightBack.run(BACKWARD);
+  rightFront.run(BACKWARD);
+  leftFront.run(FORWARD);
+  leftBack.run(FORWARD);
+  delay(duration);
+  stopMove();
+}
+
+void setTurnSpeed() {
+  rightBack.setSpeed(motorSpeed + turnSpeed);
+  rightFront.setSpeed(motorSpeed + turnSpeed);
+  leftFront.setSpeed(motorSpeed + motorOffset + turnSpeed);
+  leftBack.setSpeed(motorSpeed + motorOffset + turnSpeed);
+}
+
+// Ultrasonic Distance (in cm)
+int getDistance() {
+  digitalWrite(trig, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trig, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+
+  long duration = pulseIn(echo, HIGH, 20000);  // 20ms timeout
+  int distance = duration * 0.034 / 2;
+
+  if (duration == 0 || distance > 300) return 300;
+  return distance;
+}
+
+// Servo Scanning and Turn Logic
+int checkDirection() {
+  int leftDist = 0, rightDist = 0;
+
+  servoLook.write(150);     // Look Left
+  delay(500);
+  leftDist = getDistance();
+  Serial.print("Left Distance: ");
+  Serial.println(leftDist);
+
+  servoLook.write(30);      // Look Right
+  delay(500);
+  rightDist = getDistance();
+  Serial.print("Right Distance: ");
+  Serial.println(rightDist);
+
+  servoLook.write(90);      // Center again
+
+  if (leftDist > stopDist && rightDist > stopDist) {
+    return (leftDist > rightDist) ? 0 : 2; // More free space
+  } else if (leftDist > stopDist) {
+    return 0;  // Turn left
+  } else if (rightDist > stopDist) {
+    return 2;  // Turn right
+  } else {
+    return 1;  // U-turn
+  }
+}
